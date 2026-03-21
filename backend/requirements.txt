@@ -1,0 +1,42 @@
+# FastAPI & Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+
+# Database & Vector Store
+neo4j>=5.15.0
+faiss-cpu>=1.9.0
+
+# PDF Processing (pymupdf - use latest for Windows wheels)
+pymupdf>=1.25.0
+pdfplumber>=0.10.0
+
+# OCR - PaddleOCR: pip install paddlepaddle paddleocr (separately, Windows may need build tools)
+# paddlepaddle>=2.5.0
+# paddleocr>=2.7.0
+
+# Embeddings & ML
+sentence-transformers>=2.3.0
+numpy>=1.26.0
+
+# LLM & AI
+langchain>=0.1.0
+langchain-google-genai>=0.0.6
+langchain-openai>=0.0.6
+langgraph>=0.0.20
+openai>=1.12.0
+google-generativeai>=0.4.0
+
+# Language & Translation
+langdetect>=1.0.9
+deep-translator>=1.11.0
+
+# Optional NER (graph hybrid extraction): pip install spacy && python -m spacy download en_core_web_sm
+# spacy>=3.7.0
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+aiofiles>=23.2.0
+httpx>=0.26.0

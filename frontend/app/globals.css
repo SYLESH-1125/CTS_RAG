@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #fafafa;
+    --foreground: #18181b;
+  }
+  body {
+    background-color: #fafafa;
+    color: #18181b;
+    @apply bg-surface-50 text-surface-900;
+  }
+}
