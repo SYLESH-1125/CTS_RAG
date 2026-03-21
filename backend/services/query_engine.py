@@ -1,19 +1,23 @@
 """
 Phase 3: Query Engine - Graph-first RAG.
 FAISS returns chunk_ids -> Neo4j queried by chunk_ids.
-MATCH (c:Chunk)-[:MENTIONS]->(e) WHERE c.id IN [...] RETURN c, e
+Production output: answer, unique citations, graph trace, reasoning steps, confidence.
 """
 import logging
 import re
 import time
 from typing import Any
 
+import numpy as np
 from langdetect import detect
 from deep_translator import GoogleTranslator
 
 from config import get_settings
 
 logger = logging.getLogger("graph_rag.services.query_engine")
+
+CITATION_MAX = 5
+CITATION_DEDUP_SIM_THRESHOLD = 0.92  # cosine sim >= this = duplicate
 
 
 class QueryEngine:
@@ -78,32 +82,117 @@ class QueryEngine:
             + " RETURN c, e"
         )
         
+        # Deduplicate citations: chunk_id + embedding similarity, limit to top 3-5
+        citations_deduped = self._deduplicate_citations(chunks_used)[:CITATION_MAX]
+        citations_structured = [
+            {
+                "chunk_id": c.get("chunk_id", ""),
+                "page": int(c.get("page", 0)),
+                "source": c.get("source", ""),
+                "text": (c.get("text") or c.get("content", ""))[:2000],
+            }
+            for c in citations_deduped
+        ]
+
+        # Graph trace: only nodes and edges from retrieval (subgraph used in answering)
+        used_node_ids = {str(n.get("id", "")) for n in graph_result.get("nodes", []) if n.get("id")}
+        graph_trace_nodes = [
+            {
+                "id": n.get("id"),
+                "name": (n.get("props") or {}).get("name", n.get("id", "")),
+                "group": 2,
+                "labels": n.get("labels", []),
+                "used": True,
+            }
+            for n in graph_result.get("nodes", [])
+            if n.get("id")
+        ]
+        graph_trace_edges = list(graph_result.get("edges", []))
+
         retrieval_graph = {
             "nodes": [
-                {
-                    "id": n.get("id"),
-                    "name": (n.get("props") or {}).get("name", n.get("id", "")),
-                    "group": 2,
-                    "labels": n.get("labels", []),
-                }
-                for n in graph_result.get("nodes", [])
-                if n.get("id")
+                {"id": n.get("id"), "name": (n.get("props") or {}).get("name", n.get("id", "")), "group": 2, "labels": n.get("labels", [])}
+                for n in graph_result.get("nodes", []) if n.get("id")
             ],
             "links": graph_result.get("edges", []),
         }
 
+        reasoning_steps = [
+            {"step": t.get("step", ""), "duration_ms": round(t.get("duration_ms", 0)), "description": self._step_description(t.get("step", ""))}
+            for t in timeline
+        ]
+
         return {
             "answer": answer,
-            "citations": citations,
+            "citations": citations_structured,
+            "graph_trace": {"nodes": graph_trace_nodes, "edges": graph_trace_edges, "used_node_ids": list(used_node_ids)},
             "graph_nodes": graph_result.get("nodes", []),
             "graph_edges": graph_result.get("edges", []),
             "retrieval_graph": retrieval_graph,
             "chunks_used": chunks_used,
+            "reasoning_steps": reasoning_steps,
             "confidence": confidence,
             "cypher_query": cypher_preview,
             "processing_timeline": timeline,
         }
     
+    def _step_description(self, step: str) -> str:
+        """Human-readable step description."""
+        desc = {
+            "normalize": "Query translated/normalized to English",
+            "faiss_search": "Semantic search in FAISS for relevant chunks",
+            "neo4j_by_chunk_ids": "Neo4j graph expansion by chunk IDs",
+            "generate_answer": "LLM synthesized answer with citations",
+        }
+        return desc.get(step, step)
+
+    def _deduplicate_citations(self, chunks: list[dict]) -> list[dict]:
+        """Deduplicate by chunk_id and embedding similarity. Keep top 3-5 unique chunks."""
+        if not chunks:
+            return []
+        seen_ids: set[str] = set()
+        unique: list[dict] = []
+        unique_embeddings: list[np.ndarray] = []
+        try:
+            from services.embedder import get_embedder
+            embedder = get_embedder()
+        except Exception as e:
+            logger.debug(f"Embedder unavailable for citation dedup: {e}")
+            embedder = None
+        for c in chunks:
+            cid = c.get("chunk_id", "")
+            if cid and cid in seen_ids:
+                continue
+            text = (c.get("text") or c.get("content") or "").strip()
+            if not text:
+                if cid and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    unique.append(c)
+                continue
+            if embedder:
+                try:
+                    emb = embedder.encode([text], normalize_embeddings=True)
+                    for u_emb in unique_embeddings:
+                        sim = float(np.dot(emb[0], u_emb))
+                        if sim >= CITATION_DEDUP_SIM_THRESHOLD:
+                            break
+                    else:
+                        unique_embeddings.append(emb[0].copy())
+                        if cid:
+                            seen_ids.add(cid)
+                        unique.append(c)
+                        if len(unique) >= CITATION_MAX:
+                            break
+                    continue
+                except Exception as e:
+                    logger.debug(f"Citation embedding dedup skip: {e}")
+            if cid:
+                seen_ids.add(cid)
+            unique.append(c)
+            if len(unique) >= CITATION_MAX:
+                break
+        return unique
+
     def _normalize(self, text: str) -> str:
         try:
             lang = detect(text)
@@ -249,6 +338,18 @@ class QueryEngine:
         )
         return "\n".join(lines).strip()
 
+    def _clean_answer_text(self, text: str) -> str:
+        """Remove inline citation markup; clean trailing raw table-like data."""
+        if not text:
+            return text
+        text = re.sub(r"\[Source:\s*[^\]]+\]", "", text, flags=re.I)
+        text = re.sub(r"Cited source:\s*\[?[^\]]*\]?", "", text, flags=re.I)
+        text = re.sub(r"\(Source:\s*[^)]+\)", "", text)
+        # Remove trailing raw table rows (e.g. "year Income cost 2021 80 50")
+        text = re.sub(r"\n\s*(year|Year)\s+[A-Za-z]+\s+[A-Za-z]+\s+\d{4}\s+\d+\s+\d+.*$", "", text, flags=re.I | re.DOTALL)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
     def _generate_answer(self, query: str, context: str, chunks: list) -> tuple[str, list, float]:
         """LLM generates answer with citations; falls back to chunk excerpts if LLM is down."""
         from services.llm_client import LLMClient
@@ -264,9 +365,14 @@ Context:
 
 Question: {query}
 
-Provide a clear answer and cite sources (source, page) where relevant.
+Provide a clear, well-formatted answer:
+1. Start with a direct answer in 1-2 sentences.
+2. Add a "Details:" section with bullet points or short paragraphs if needed.
+3. Do NOT include inline citations like [Source: page_1] or "Cited source:" in the answer text.
+4. Citations will be displayed separately in the UI.
 """
         answer = (llm.generate(prompt, max_tokens=1024) or "").strip()
+        answer = self._clean_answer_text(answer)
         has_context = bool(context.strip()) and context.strip() != "No context found."
 
         if answer:

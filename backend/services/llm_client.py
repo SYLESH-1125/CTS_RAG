@@ -77,11 +77,15 @@ class LLMClient:
         return configured if configured else None
 
     def generate(self, prompt: str, max_tokens: int = 1024) -> str:
-        """Generate text completion."""
+        """Generate text completion. Tries Ollama first; falls back to Gemini 2.5 Flash if Ollama fails."""
         provider = self.settings.llm_provider.lower()
 
         if provider == "ollama":
-            return self._ollama_generate(prompt, max_tokens)
+            out = self._ollama_generate(prompt, max_tokens)
+            if out:
+                return out
+            # Fallback: Gemini 2.5 Flash when Ollama unavailable
+            return self._gemini_fallback_generate(prompt, max_tokens)
         elif provider == "gemini":
             model = self._get_client()
             response = model.generate_content(prompt)
@@ -94,6 +98,22 @@ class LLMClient:
                 max_tokens=max_tokens,
             )
             return response.choices[0].message.content or ""
+
+    def _gemini_fallback_generate(self, prompt: str, max_tokens: int) -> str:
+        """Fallback to Gemini 2.5 Flash when Ollama is unavailable. Requires GEMINI_API_KEY."""
+        if not self.settings.gemini_api_key:
+            return ""
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=self.settings.gemini_api_key)
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            response = model.generate_content(prompt, generation_config=genai.GenerationConfig(max_output_tokens=max_tokens))
+            if response and response.text:
+                logger.info("Used Gemini 2.5 Flash fallback (Ollama unavailable)")
+                return response.text.strip()
+        except Exception as e:
+            logger.warning(f"Gemini fallback failed: {e}")
+        return ""
 
     def _ollama_generate(self, prompt: str, max_tokens: int) -> str:
         """Generate via Ollama. Resolves model from /api/tags."""

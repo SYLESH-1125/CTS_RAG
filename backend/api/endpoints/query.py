@@ -17,11 +17,13 @@ class QueryRequest(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    citations: list[dict] = Field(default_factory=list)
+    citations: list[dict] = Field(default_factory=list)  # [{chunk_id, page, source, text}]
+    graph_trace: dict = Field(default_factory=dict)  # {nodes, edges, used_node_ids}
     graph_nodes: list[dict] = Field(default_factory=list)
     graph_edges: list[dict] = Field(default_factory=list)
     retrieval_graph: dict = Field(default_factory=dict)
     chunks_used: list[dict] = Field(default_factory=list)
+    reasoning_steps: list[dict] = Field(default_factory=list)
     confidence: float = 0.0
     cypher_query: str | None = None
     processing_timeline: list[dict] = Field(default_factory=list)

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     chunk_similarity_threshold: float = 0.5  # Split when consecutive sentence similarity < this
 
     # Extraction (fast path: OCR only, no vision)
-    enable_translation: bool = False  # Set True for non-English PDFs
+    enable_translation: bool = True  # Translate non-English content to English (skips if mostly ASCII)
     skip_table_llm: bool = True  # Skip LLM for table context
     extract_charts: bool = True  # Chart extraction via OCR only (fast)
 

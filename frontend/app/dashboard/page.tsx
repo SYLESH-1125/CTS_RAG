@@ -120,10 +120,11 @@ export default function DashboardPage() {
       setStreamedExtraction((prev) => {
         const base = prev ?? { text_units: [], table_units: [], image_units: [] };
         const grid = d.grid_preview as string[][] | undefined;
-        const flat = grid?.map((row) => row.join(" | ")).join("\n") || String(d.context_ready ?? "");
+        const flat = grid?.map((row) => row.join(" | ")).join("\n") || String(d.original ?? "");
         const u = {
-          original: flat,
-          context_ready: String(d.context_ready ?? flat),
+          original: String(d.original ?? flat),
+          translated: String(d.translated ?? d.context_ready ?? flat),
+          context_ready: String(d.context_ready ?? d.translated ?? flat),
           page: Number(d.page) || 0,
           source: String(d.source ?? ""),
         };
@@ -135,9 +136,12 @@ export default function DashboardPage() {
     on("extraction_image", (d) => {
       setStreamedExtraction((prev) => {
         const base = prev ?? { text_units: [], table_units: [], image_units: [] };
+        const orig = String(d.original ?? d.ocr_text ?? "");
+        const translated = String(d.ocr_translated ?? d.merged_context ?? orig);
         const u = {
-          merged_context: String(d.merged_context ?? d.ocr_text ?? ""),
-          original: String(d.ocr_text ?? ""),
+          merged_context: translated,
+          original: orig,
+          ocr_translated: translated,
           page: Number(d.page) || 0,
           source: String(d.source ?? ""),
         };

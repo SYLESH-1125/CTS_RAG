@@ -6,8 +6,8 @@ import { useDashboardStore } from "@/stores/useDashboardStore";
 
 type Extraction = {
   text_units?: { original: string; translated: string; page: number }[];
-  table_units?: { original?: string; context_ready?: string; page: number }[];
-  image_units?: { merged_context?: string; original?: string; page: number; source?: string }[];
+  table_units?: { original?: string; translated?: string; context_ready?: string; page: number }[];
+  image_units?: { merged_context?: string; original?: string; ocr_translated?: string; page: number; source?: string }[];
 };
 
 function Typewriter({ text, className }: { text: string; className?: string }) {
@@ -125,22 +125,22 @@ export function ExtractionViewer({
                 <div className="mt-2 overflow-x-auto text-sm">
                   <table className="w-full border-collapse text-left">
                     <tbody>
-                      {(
-                        extraction.table_units![extraction.table_units!.length - 1]?.context_ready ||
-                        extraction.table_units![extraction.table_units!.length - 1]?.original ||
-                        ""
-                      )
-                        .split("\n")
-                        .slice(0, 8)
-                        .map((row, i) => (
-                          <tr key={i} className="border-b border-emerald-100">
-                            {row.split("|").map((cell, j) => (
-                              <td key={j} className="px-2 py-1 text-slate-700">
-                                {cell.trim()}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
+                      {(() => {
+                        const tbl = extraction.table_units![extraction.table_units!.length - 1];
+                        const tableContent =
+                          translationMode === "en"
+                            ? tbl?.translated || tbl?.context_ready || tbl?.original || ""
+                            : tbl?.original || tbl?.context_ready || "";
+                        return tableContent.split("\n").slice(0, 8);
+                      })().map((row, i) => (
+                        <tr key={i} className="border-b border-emerald-100">
+                          {row.split("|").map((cell, j) => (
+                            <td key={j} className="px-2 py-1 text-slate-700">
+                              {cell.trim()}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -158,7 +158,9 @@ export function ExtractionViewer({
                 <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
                   {(() => {
                     const u = extraction.image_units![extraction.image_units!.length - 1];
-                    return u?.merged_context || u?.original;
+                    return translationMode === "en"
+                      ? u?.ocr_translated || u?.merged_context || u?.original || ""
+                      : u?.original || u?.merged_context || "";
                   })()}
                 </p>
               </motion.div>

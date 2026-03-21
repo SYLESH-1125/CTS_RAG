@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import { queryRag } from "@/lib/api";
-import { Loader2, Send, GitBranch, Sparkles } from "lucide-react";
+import { Loader2, Send, GitBranch, Sparkles, FileText } from "lucide-react";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
@@ -87,6 +87,18 @@ export function QueryVisualizer({ documentId }: { documentId: string | null }) {
 
   const timeline = result?.processing_timeline || [];
   const showGraph = graphPayload.nodes.length > 0;
+
+  const formattedAnswer = useMemo(() => {
+    const raw = result?.answer ?? "";
+    if (!raw) return { summary: "", details: "" };
+    const detailsMatch = raw.match(/\bDetails?:\s*([\s\S]*)/i);
+    if (detailsMatch) {
+      const summary = raw.slice(0, raw.search(/\bDetails?:\s*/i)).trim();
+      const details = detailsMatch[1].trim();
+      return { summary, details };
+    }
+    return { summary: raw, details: "" };
+  }, [result?.answer]);
 
   return (
     <div className="space-y-4">
@@ -251,23 +263,49 @@ export function QueryVisualizer({ documentId }: { documentId: string | null }) {
             </div>
           )}
 
+          {/* Detailed Answer card - formatted, structured output */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-            className="rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/80 p-5 shadow-sm"
+            transition={{ delay: 0.32 }}
+            className="rounded-xl border-2 border-blue-200/80 bg-white p-6 shadow-lg"
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Answer</span>
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <FileText className="h-4 w-4 text-blue-600" /> Detailed Answer
+              </h3>
               <motion.span
-                className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+                className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-800"
                 initial={{ scale: 0.9 }}
                 animate={{ scale: 1 }}
               >
-                confidence {(result.confidence ?? 0).toFixed(2)}
+                {(Math.round((result.confidence ?? 0) * 100))}% confidence
               </motion.span>
             </div>
-            <p className="mt-3 text-sm leading-relaxed text-slate-800">{result.answer}</p>
+            <div className="mt-4 space-y-4">
+              {formattedAnswer.summary && (
+                <div>
+                  <p className="text-sm font-medium text-slate-700 leading-relaxed">
+                    {formattedAnswer.summary}
+                  </p>
+                </div>
+              )}
+              {formattedAnswer.details && (
+                <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Details</p>
+                  <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap space-y-2">
+                    {formattedAnswer.details.split(/\n+/).filter(Boolean).map((line, i) => (
+                      <p key={i} className={line.trim().match(/^[•\-*]\s/) ? "pl-3 border-l-2 border-blue-200" : ""}>
+                        {line.trim()}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {!formattedAnswer.summary && !formattedAnswer.details && (
+                <p className="text-sm leading-relaxed text-slate-700">{result.answer}</p>
+              )}
+            </div>
           </motion.div>
 
           {(result.citations?.length ?? 0) > 0 && (

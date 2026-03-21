@@ -229,6 +229,8 @@ class ExtractionService:
                                 "rows": min(12, len(table)),
                                 "cols": min(12, max(len(r) for r in table) if table else 0),
                                 "grid_preview": [[str(c or "")[:40] for c in (r[:8] or [])] for r in (table[:6] or [])],
+                                "original": table_text[:1500],
+                                "translated": (translated or table_text)[:1500],
                                 "context_ready": (context_ready or translated or table_text)[:1500],
                             },
                         )
@@ -264,10 +266,12 @@ class ExtractionService:
 
                     ocr_text = run_ocr(str(img_path))
                     if ocr_text.strip():
+                        translated = self._translate_if_needed(ocr_text)
                         row = {
                             "type": "image",
                             "original": ocr_text,
-                            "merged_context": ocr_text,
+                            "merged_context": translated or ocr_text,
+                            "ocr_translated": translated or ocr_text,
                             "page": page_num + 1,
                             "source": f"page_{page_num + 1}_img_{img_idx}",
                         }
@@ -278,7 +282,10 @@ class ExtractionService:
                                 {
                                     "page": row["page"],
                                     "source": row["source"],
+                                    "original": ocr_text[:1200],
                                     "ocr_text": ocr_text[:1200],
+                                    "merged_context": (translated or ocr_text)[:1200],
+                                    "ocr_translated": (translated or ocr_text)[:1200],
                                     "path": str(img_path).replace("\\", "/"),
                                 },
                             )
@@ -323,7 +330,7 @@ class ExtractionService:
         """Translate to English if not English. Disabled by default to avoid hangs."""
         if not text or not text.strip():
             return text
-        if not getattr(self.settings, "enable_translation", False):
+        if not getattr(self.settings, "enable_translation", True):
             return text
 
         # Fast-path: mostly ASCII => assume English, skip translation
