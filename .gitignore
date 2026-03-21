@@ -1,7 +1,26 @@
-# Environment
+# Environment & confidential (actual .env with secrets - ignored; .env.example kept as template)
 .env
 .env.local
+.env.development
+.env.production
+.env.test
 .env.*.local
+**/.env
+**/.env.local
+**/.env.development
+**/.env.production
+**/.env.test
+**/.env.*.local
+
+# Secrets, keys, credentials
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+*.secret
+config/secrets*
 
 # Python
 __pycache__/
