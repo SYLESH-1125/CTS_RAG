@@ -1,16 +1,18 @@
-# Environment & confidential (actual .env with secrets - ignored; .env.example kept as template)
+# Environment & confidential
 .env
 .env.local
 .env.development
 .env.production
 .env.test
 .env.*.local
+.env.example
 **/.env
 **/.env.local
 **/.env.development
 **/.env.production
 **/.env.test
 **/.env.*.local
+**/.env.example
 
 # Secrets, keys, credentials
 *.pem
