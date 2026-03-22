@@ -114,6 +114,27 @@ class VectorStoreService:
             })
         self._save()
     
+    def search_by_keywords(
+        self,
+        keywords: list[str],
+        document_id: str | None = None,
+        k: int = 8,
+    ) -> list[dict]:
+        """Chunks containing ALL keywords. For exact lookups (e.g. cost in 2040)."""
+        if not keywords:
+            return []
+        kw_lower = [kw.strip().lower() for kw in keywords if kw and len(kw.strip()) >= 2]
+        if not kw_lower:
+            return []
+        results = []
+        for meta in self._metadata:
+            if document_id and meta.get("document_id") != document_id:
+                continue
+            text = (meta.get("text") or "").lower()
+            if all(kw in text for kw in kw_lower):
+                results.append({**meta.copy(), "score": 1.0})
+        return results[:k]
+
     def search(
         self,
         query: str,

@@ -13,6 +13,8 @@ interface Citation {
   page: number;
   source: string;
   text: string;
+  graph_entities?: string[];
+  graph_relationships?: string[];
 }
 
 interface GraphTraceNode {
@@ -213,7 +215,7 @@ export default function QueryPage() {
                 <h2 className="flex items-center gap-2 font-semibold text-slate-900">
                   <FileText className="h-5 w-5 text-blue-600" /> Citations
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">Unique sources (top 3–5, deduplicated)</p>
+                <p className="mt-1 text-xs text-slate-500">Sources with graph nodes and relationships used</p>
                 <div className="mt-4 space-y-3 max-h-80 overflow-y-auto">
                   {result.citations?.length ? (
                     result.citations.map((c, i) => (
@@ -238,7 +240,23 @@ export default function QueryPage() {
                             </>
                           )}
                         </div>
-                        <p className="mt-2 text-sm text-slate-700 line-clamp-3">{c.text}</p>
+                        <p className="mt-2 text-sm text-slate-700">{c.text}</p>
+                        {c.graph_entities && c.graph_entities.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-200">
+                            <span className="text-xs font-medium text-violet-600">Graph entities:</span>
+                            <span className="ml-2 text-xs text-slate-600">{c.graph_entities.join(", ")}</span>
+                          </div>
+                        )}
+                        {c.graph_relationships && c.graph_relationships.length > 0 && (
+                          <div className="mt-1">
+                            <span className="text-xs font-medium text-violet-600">Relationships:</span>
+                            <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                              {c.graph_relationships.map((r, j) => (
+                                <li key={j} className="font-mono">{r}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </button>
                     ))
                   ) : (

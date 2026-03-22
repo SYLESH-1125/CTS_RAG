@@ -3,9 +3,13 @@ LLM client - supports Ollama (local), Gemini, OpenAI.
 Ollama: resolves model names against /api/tags, works with llama3.1:8b, llama3.2-vision, etc.
 """
 import logging
+import warnings
 from pathlib import Path
 
 import httpx
+
+# Suppress deprecated google.generativeai FutureWarning
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*generativeai.*")
 
 from config import get_settings
 
@@ -14,6 +18,7 @@ logger = logging.getLogger("graph_rag.services.llm_client")
 
 class LLMClient:
     """Unified LLM interface for text and vision."""
+    _ollama_warn_logged = False  # Log "Ollama not available" only once per process
 
     def __init__(self):
         self.settings = get_settings()
@@ -140,7 +145,9 @@ class LLMClient:
             except Exception as e:
                 logger.debug(f"Ollama {endpoint} failed: {e}")
 
-        logger.warning("Ollama not available. Run: ollama serve && ollama pull llama3.1:8b")
+        if not LLMClient._ollama_warn_logged:
+            LLMClient._ollama_warn_logged = True
+            logger.warning("Ollama not available. Run: ollama serve && ollama pull llama3.1:8b")
         return ""
 
     def vision_describe(self, image_path: str) -> str:

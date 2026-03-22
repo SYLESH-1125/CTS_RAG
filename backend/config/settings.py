@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     graph_use_spacy_ner: bool = False  # True: pip install spacy + en_core_web_sm
     graph_enable_communities: bool = True
 
+    # Query: latency-optimized defaults
+    query_retrieval_k: int = 8
+    query_context_max_chunks: int = 3  # Top 3 for <3-5s latency
+    query_context_max_chars_per_chunk: int = 400
+    query_llm_timeout_sec: float = 15.0
+
     @property
     def neo4j_user_resolved(self) -> str:
         """Use neo4j_username if set (Aura), else neo4j_user."""

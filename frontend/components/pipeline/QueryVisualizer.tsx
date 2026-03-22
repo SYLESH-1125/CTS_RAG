@@ -8,9 +8,17 @@ import { Loader2, Send, GitBranch, Sparkles, FileText } from "lucide-react";
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
+type Citation = {
+  chunk_id?: string;
+  source?: string;
+  page?: number;
+  text?: string;
+  graph_entities?: string[];
+  graph_relationships?: string[];
+};
 type QueryResult = {
   answer: string;
-  citations: { source?: string; page?: number; chunk_id?: string }[];
+  citations: Citation[];
   cypher_query?: string;
   confidence?: number;
   chunks_used?: { source?: string; text?: string; chunk_id?: string; score?: number }[];
@@ -309,25 +317,54 @@ export function QueryVisualizer({ documentId }: { documentId: string | null }) {
           </motion.div>
 
           {(result.citations?.length ?? 0) > 0 && (
-            <div>
-              <span className="text-xs font-medium text-slate-500">Citations</span>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {result.citations!.map((c, i) => (
-                  <motion.button
-                    key={i}
-                    type="button"
-                    initial={{ opacity: 0, scale: 0.92 }}
-                    animate={{ opacity: 1, scale: 1 }}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35 }}
+              className="mt-4 rounded-xl border border-slate-200 bg-slate-50/30 p-4"
+            >
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-3">
+                Citations — source passages and graph evidence
+              </h4>
+              <div className="space-y-3 max-h-72 overflow-y-auto">
+                {Array.from(
+                  new Map(result.citations!.map((c) => [c.chunk_id || `${c.source}-${c.page}`, c])).values()
+                ).map((c, i) => (
+                  <motion.div
+                    key={c.chunk_id || i}
+                    initial={{ opacity: 0, x: -4 }}
+                    animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.4 + i * 0.05 }}
-                    whileHover={{ scale: 1.03 }}
-                    className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-1.5 text-left text-xs text-blue-900 shadow-sm"
+                    className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm text-left"
                   >
-                    <span className="block font-medium">{c.source}</span>
-                    <span className="text-[10px] text-blue-700/80">p.{c.page}</span>
-                  </motion.button>
+                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500 mb-2">
+                      <span>{c.source ?? "Source"}</span>
+                      <span>·</span>
+                      <span>Page {c.page ?? "—"}</span>
+                    </div>
+                    {c.text && (
+                      <p className="text-sm text-slate-700 leading-relaxed mb-3">{c.text}</p>
+                    )}
+                    {c.graph_entities && c.graph_entities.length > 0 && (
+                      <div className="mb-2">
+                        <span className="text-[10px] font-semibold uppercase text-violet-600">Graph entities:</span>
+                        <p className="text-xs text-slate-600 mt-0.5">{c.graph_entities.join(", ")}</p>
+                      </div>
+                    )}
+                    {c.graph_relationships && c.graph_relationships.length > 0 && (
+                      <div>
+                        <span className="text-[10px] font-semibold uppercase text-violet-600">Relationships:</span>
+                        <ul className="mt-0.5 space-y-0.5 text-xs font-mono text-slate-600">
+                          {c.graph_relationships.map((r, j) => (
+                            <li key={j}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </motion.div>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
         </motion.div>
       )}
