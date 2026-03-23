@@ -381,6 +381,8 @@ class GraphBuilderService:
         cache: dict[str, dict[str, Any]] = {}
         cache_max = max(256, self.settings.graph_llm_cache_max_entries)
         concurrency = max(1, self.settings.graph_extract_concurrency)
+        if self.settings.llm_provider.lower() == "ollama":
+            concurrency = min(concurrency, 2)  # Ollama struggles with 5+ concurrent requests
 
         def push_stream(event_type: str, data: dict[str, Any]) -> None:
             if not session_id:
@@ -540,10 +542,13 @@ class GraphBuilderService:
             if not c.get("chunk_id"):
                 c["chunk_id"] = str(uuid.uuid4())
 
+        concurrency = max(1, self.settings.graph_extract_concurrency)
+        if self.settings.llm_provider.lower() == "ollama":
+            concurrency = min(concurrency, 2)
         logger.info(
             "Building graph: %s chunks, concurrency=%s, doc=%s…",
             len(chunks),
-            self.settings.graph_extract_concurrency,
+            concurrency,
             doc_id[:8],
         )
 

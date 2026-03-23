@@ -52,6 +52,7 @@ class LLMClient:
                 return models
         except Exception as e:
             logger.debug(f"Ollama tags failed: {e}")
+            self._ollama_models_cache = None  # Allow retry next call
         self._ollama_models_cache = []
         return []
 
@@ -128,22 +129,37 @@ class LLMClient:
             logger.warning("No Ollama text model available. Run: ollama pull llama3.1:8b")
             return ""
 
+        timeout = max(60.0, self.settings.ollama_timeout)
         for endpoint, payload in [
             ("/api/generate", {"model": model, "prompt": prompt, "stream": False, "options": {"num_predict": max_tokens}}),
             ("/api/chat", {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False, "options": {"num_predict": max_tokens}}),
         ]:
-            try:
-                r = httpx.post(f"{base}{endpoint}", json=payload, timeout=60.0)
-                if r.status_code == 200:
-                    if endpoint == "/api/generate":
-                        return (r.json().get("response") or "").strip()
-                    msg = r.json().get("message", {})
-                    return (msg.get("content") or "").strip()
-                if r.status_code == 404:
-                    err = r.json().get("error", "")
-                    logger.warning(f"Ollama model {model} not found: {err}")
-            except Exception as e:
-                logger.debug(f"Ollama {endpoint} failed: {e}")
+            for attempt in range(2):  # retry once on timeout
+                try:
+                    r = httpx.post(f"{base}{endpoint}", json=payload, timeout=timeout)
+                    if r.status_code == 200:
+                        if endpoint == "/api/generate":
+                            return (r.json().get("response") or "").strip()
+                        msg = r.json().get("message", {})
+                        return (msg.get("content") or "").strip()
+                    if r.status_code == 404:
+                        err = r.json().get("error", "")
+                        logger.warning(f"Ollama model {model} not found: {err}")
+                    break  # don't retry on 404
+                except Exception as e:
+                    self._ollama_models_cache = None  # Allow retry
+                    err_msg = str(e).lower()
+                    is_timeout = "timeout" in err_msg or "timed out" in err_msg
+                    if is_timeout and attempt == 0:
+                        logger.debug("Ollama %s timed out, retrying once", endpoint)
+                        continue
+                    if not LLMClient._ollama_warn_logged:
+                        LLMClient._ollama_warn_logged = True
+                        if "refused" in err_msg or "connect" in err_msg or "getaddrinfo" in err_msg or "name or service" in err_msg:
+                            logger.warning("Ollama connection failed. Is Ollama running? Run: ollama serve")
+                        else:
+                            logger.warning("Ollama %s failed: %s", endpoint, e)
+                    break
 
         if not LLMClient._ollama_warn_logged:
             LLMClient._ollama_warn_logged = True

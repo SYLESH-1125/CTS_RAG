@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"  # ollama | gemini | openai
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1:8b-instruct"
+    ollama_timeout: float = 180.0  # seconds; graph extraction needs longer than 60s
     ollama_vision_model: str = ""  # Optional: llama3.2-vision for image description
     gemini_api_key: str = ""
     openai_api_key: str = ""

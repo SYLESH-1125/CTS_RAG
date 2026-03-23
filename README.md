@@ -1,4 +1,4 @@
-# CTS Graph RAG
+# CTS Graph RAG (GITHUB REPO : https://github.com/SYLESH-1125/CTS_RAG.git)
 
 A **Graph-first Retrieval-Augmented Generation (RAG)** system for PDF documents. It extracts multimodal content from PDFs, builds a knowledge graph in Neo4j, indexes text in FAISS for semantic search, and answers queries using graph context combined with an LLM.
 
@@ -31,7 +31,7 @@ CTS Graph RAG ingests PDF documents and processes them through a multi-stage pip
 | | NumPy | Numerical operations |
 | **Graph Database** | Neo4j (Aura) | Knowledge graph storage, Chunk/Entity/Relation nodes |
 | **Vector Store** | FAISS | Semantic similarity search over chunks |
-| **LLM** | Ollama (Llama 3.1 8B) | Answer generation; also supports Gemini, OpenAI |
+| **LLM** | Ollama (Llama 3.1 8B) / Gemini | Answer generation; Gemini fallback when Ollama unavailable |
 | | LangGraph | Optional agent orchestration |
 | **NLP & Translation** | langdetect | Language detection |
 | | deep-translator | Query and content translation |
@@ -83,14 +83,16 @@ CTS Graph RAG ingests PDF documents and processes them through a multi-stage pip
 
 ### Phase 5: Query (RAG)
 - **Input:** Natural-language question, optional `document_id`, optional “search all” flag
-- **Output:** Answer, citations, retrieval graph, confidence
+- **Output:** Answer, citations (with graph entities & relationships), reasoning steps, graph trace, confidence
 - **Process:**
   1. Query normalization (detect language, translate to English if needed).
-  2. FAISS semantic search → top-k `chunk_id`s (scoped by `document_id` or all).
-  3. Neo4j expansion: `MATCH (c:Chunk)-[:MENTIONS]->(e) WHERE c.id IN $chunk_ids`; optionally traverse Entity–Entity edges.
-  4. Merge chunk context and graph context.
-  5. LLM generates answer with citations.
-- **Deliverables:** Answer text, source chunks, and graph subgraph for visualization.
+  2. **Hybrid retrieval:** Keyword boost for years/metrics (e.g. "cost in 2040") + FAISS semantic search.
+  3. **Multi-concept expansion:** For queries with "and", "together", "trends", retrieval k is increased.
+  4. Neo4j expansion: Chunks + Entity nodes + Entity–Entity edges; chunk-to-entity mapping for citation attribution.
+  5. **Answer generator:** Graph triples + top chunks → LLM synthesizes (never "no direct explanation").
+  6. **Detailed citations:** Passage text, graph entities, and relationships used from each source.
+  7. **Confidence score:** `graph_match×0.4 + chunk_similarity×0.3 + citation_strength×0.3`.
+- **Deliverables:** Answer, reasoning trace, citations (chunk_id, page, text, graph_entities, graph_relationships), graph_trace.
 
 ![Phase 5 - Query Reasoning](images/Screenshot%202026-03-21%20173518.png)
 
@@ -114,7 +116,8 @@ rag_cts/
 │   │   ├── chunking.py    # Phase 2
 │   │   ├── graph_builder.py # Phase 3
 │   │   ├── vector_store.py  # Phase 4
-│   │   ├── query_engine.py  # Phase 5
+│   │   ├── query_engine.py  # Phase 5 orchestration
+│   │   ├── answer_generator.py  # Graph triples + chunks → LLM synthesis
 │   │   ├── chunk_processor.py
 │   │   ├── embedder.py
 │   │   └── ...
@@ -147,10 +150,18 @@ rag_cts/
 ### 1. Neo4j
 Create a free database at [Neo4j Aura](https://neo4j.com/cloud/aura/). Save URI, username, and password.
 
-### 2. Ollama
+### 2. LLM (Ollama or Gemini)
+**Ollama (local) — required for `LLM_PROVIDER=ollama`:**
 ```bash
-ollama pull llama3.1:8b-instruct
+# Start Ollama (run in a separate terminal; must stay running)
+ollama serve
+
+# Pull the model (one-time)
+ollama pull llama3.1:8b
 ```
+**Verify:** Open http://localhost:11434 in a browser, or call `GET /api/status/llm` to test connectivity.
+
+**Or** set `GEMINI_API_KEY` in `backend/.env` for fallback when Ollama is unavailable.
 
 ### 3. Backend
 ```bash
@@ -196,8 +207,20 @@ Open **http://localhost:3001**.
 | `/api/upload/status/{job_id}/stream` | GET | SSE stream of job status |
 | `/api/upload/push-neo4j/{job_id}` | POST | Explicit push of graph to Neo4j |
 | `/api/upload/neo4j-stats` | GET | Total Chunks, Entities, Relationships in Neo4j |
-| `/api/query/` | POST | RAG query with `query`, `document_id`, `search_all` |
+| `/api/query/` | POST | RAG query; returns `answer`, `citations` (text + graph_entities + graph_relationships), `reasoning_steps`, `graph_trace`, `confidence` |
 | `/api/graph/document/{document_id}` | GET | Graph nodes and edges for visualization |
+| `/api/status/llm` | GET | Test LLM connectivity (Ollama + models) |
+
+---
+
+## Troubleshooting
+
+### "Ollama unavailable" / Gemini fallback used
+1. **Is Ollama running?** Run `ollama serve` in a separate terminal and keep it open.
+2. **Is the model installed?** Run `ollama list` — if `llama3.1:8b` is missing, run `ollama pull llama3.1:8b`.
+3. **Check connectivity:** `GET http://localhost:8000/api/status/llm` — should show `ollama_reachable: true` and `llm_working: true`.
+4. **URL typo?** In `backend/.env`, ensure `OLLAMA_BASE_URL=http://localhost:11434` (no trailing slash, no typos).
+5. **Graph build timeouts?** If you see `Ollama /api/generate failed: timed out`, increase `OLLAMA_TIMEOUT=300` in `.env`. With `LLM_PROVIDER=ollama`, graph build uses concurrency=2 to avoid overloading Ollama.
 
 ---
 
@@ -216,10 +239,12 @@ cd backend
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NEO4J_URI` | Yes | Neo4j connection URI |
-| `NEO4J_USERNAME` | Yes | Neo4j username |
+| `NEO4J_USERNAME` | Yes | Neo4j username (Aura may use instance ID) |
 | `NEO4J_PASSWORD` | Yes | Neo4j password |
 | `LLM_PROVIDER` | No | `ollama` (default) \| `gemini` \| `openai` |
 | `OLLAMA_BASE_URL` | No | Default `http://localhost:11434` |
-| `OLLAMA_MODEL` | No | Default `llama3.1:8b-instruct` |
+| `OLLAMA_MODEL` | No | Default `llama3.1:8b` |
+| `OLLAMA_TIMEOUT` | No | Seconds per request (default 180); graph extraction needs longer |
+| `GEMINI_API_KEY` | No | Fallback when Ollama unavailable |
 | `EMBEDDING_MODEL` | No | Default `sentence-transformers/all-MiniLM-L6-v2` |
 | `FRONTEND_URL` | No | CORS origin, default `http://localhost:3001` |
